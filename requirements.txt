@@ -1,0 +1,9 @@
+stable-retro==1.0.1
+gymnasium==1.4.0
+numpy==2.2.6
+torch==2.11.0
+stable-baselines3==2.9.2
+tensorboard==2.21.0
+opencv-python==5.0.0.93
+imageio==2.38.0
+imageio-ffmpeg==0.7.0
