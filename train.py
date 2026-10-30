@@ -225,7 +225,7 @@ class CurriculumCallback(BaseCallback):
         log = open(os.path.join(self.run_dir, "explore.log"), "a")
         self.explorer = subprocess.Popen(
             ["nice", "-n", "15", sys.executable, "-W", "ignore", "explore.py",
-             "--run", os.path.basename(self.run_dir), "--hours", "0.5", "--levels", *self.levels()],
+             "--run", os.path.basename(self.run_dir), "--hours", "3", "--levels", *self.levels()],
             stdout=log, stderr=subprocess.STDOUT)
 
 
