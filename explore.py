@@ -42,7 +42,9 @@ def recent_reach(run_dir, level, hours):
             continue
         for m in json.loads(str(np.load(path)["meta"])):
             if m["level"] == level and not m.get("from_start", True) and m["time"] >= since:
-                b = m["start_x"] // FRONTIER_BIN
+                b = m.get("start_bin")
+                if b is None:   # older episodes, before area keys
+                    b = m["start_x"] // FRONTIER_BIN
                 reach[b].append(m["max_x"])
                 flags[b] += m["outcome"] == "flag"
     return reach, flags
