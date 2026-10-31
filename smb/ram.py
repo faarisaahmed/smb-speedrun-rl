@@ -14,6 +14,7 @@ class RAM:
     STAGE = 0x075C
     WORLD = 0x075F
     AREA = 0x0760
+    AREA_POINTER = 0x0750  # which area (main level, bonus room, ...) is loaded
     GAME_MODE = 0x0770     # 0 title/demo, 1 playing, 2 end of world, 3 game over
     TIMER = 0x07F8         # three BCD-ish digits, 0x07F8..0x07FA
 

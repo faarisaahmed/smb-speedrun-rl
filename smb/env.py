@@ -77,8 +77,8 @@ PASS_BINS = 4
 HOPELESS_ATTEMPTS = 100   # a restart point with this many attempts and no passes gets replaced
 SAVE_FRONTIER_EVERY = 100  # episodes between writing this env's restart points to disk
 AREA_CHANGE_DX = 256   # pipes / bonus rooms / vines: x jumps to another area
-# Frontier key = area * AREA_KEY + x bin, where area counts the area changes
-# since the level start, so bonus rooms get restart points of their own.
+# Frontier key = x bin in the level's main area, and (area pointer + 1) *
+# AREA_KEY + x bin in a sub-area, so bonus rooms get restart points of their own.
 AREA_KEY = 1000
 # Some jumps need inputs held exactly for many steps, which random exploration
 # essentially never finds. Snapshots taken every few steps along one of the
@@ -160,6 +160,7 @@ class SMBEnv(gym.Env):
         self.frontier_dir = frontier_dir
         self.frontier = {}   # level -> {bin: emulator state}
         self.demo = {}       # level -> {("demo", step): emulator state}, never replaced
+        self.main_area = {}  # level -> area pointer of its main area
         self.bin_stats = {}  # level -> {bin or demo key: [attempts, passes]} for restarts from it
         self.set_levels(levels)
         self.button_arrays = [button_array(b) for b in ACTIONS]
@@ -243,8 +244,8 @@ class SMBEnv(gym.Env):
         self.actions, self.xs, self.ys = [], [], []
         self.anomalies = []
         self.pending = []   # (step, bin, state) snapshots awaiting commit
-        self.area = self.start_bin // AREA_KEY if self.start_key is not None else 0
-        self.next_bin = self.area * AREA_KEY + self.max_x // FRONTIER_BIN + 1
+        self.area = self.area_of(ram)
+        self.next_bin = {self.area: self.max_x // FRONTIER_BIN + 1}   # per area
         tiles, objs, scalars = observe(ram)
         self.obj_hist = [objs] * HISTORY
         self.scalar_hist = [scalars] * HISTORY
@@ -274,17 +275,16 @@ class SMBEnv(gym.Env):
         if abs(dx) > ANOMALY_DX:
             self.anomalies.append([self.steps, int(dx)])
         if abs(dx) >= AREA_CHANGE_DX:
-            self.area += 1
-            self.next_bin = self.area * AREA_KEY + x // FRONTIER_BIN
             self.area_best = x
+        self.area = self.area_of(ram)
         self.prev_x = x
         # Only snapshot with Mario standing on something: a mid-air snapshot can
         # be a fall that's already doomed but takes longer than SAFE_STEPS.
         on_ground = ram[RAM.FLOAT_STATE] == 0 and ram[RAM.Y_PAGE] == 1
-        key = self.area * AREA_KEY + x // FRONTIER_BIN
-        if self.mid_start_prob and on_ground and key >= self.next_bin:
-            self.next_bin = key + 1
-            self.pending.append((self.steps, key, self.emu.em.get_state()))
+        b = x // FRONTIER_BIN
+        if self.mid_start_prob and on_ground and b >= self.next_bin.get(self.area, 0):
+            self.next_bin[self.area] = b + 1
+            self.pending.append((self.steps, self.area * AREA_KEY + b, self.emu.em.get_state()))
 
         reward = max(0, x - self.max_x) * PROGRESS_SCALE - TIME_PENALTY
         self.max_x = max(self.max_x, x)
@@ -317,13 +317,17 @@ class SMBEnv(gym.Env):
         info = {"level": self.level, "x": x}
         if terminated or truncated:
             outcome = "flag" if flag else "death" if died else "stuck"
-            safe_bin = self.commit_frontier(self.steps - SAFE_STEPS if died else self.steps)
+            safe_key = self.commit_frontier(self.steps - SAFE_STEPS if died else self.steps)
             if self.start_key is not None:
                 # A pass means standing safely PASS_BINS further on; just getting
                 # that far (e.g. falling past a ledge into a pit) doesn't count.
                 stat = self.bin_stats[self.level].setdefault(self.start_key, [0, 0])
                 stat[0] += 1
-                stat[1] += int(flag or safe_bin >= self.start_bin + PASS_BINS)
+                # Standing safely in another area (out of a bonus room, say) counts too.
+                start_area, start_bin = divmod(self.start_bin, AREA_KEY)
+                safe_area, safe_bin = divmod(safe_key, AREA_KEY)
+                stat[1] += int(flag or safe_key >= 0 and (safe_area != start_area
+                                                          or safe_bin >= start_bin + PASS_BINS))
             meta = {
                 "id": self.episode_id, "rank": self.rank, "level": self.level,
                 "outcome": outcome, "frames": self.frames, "steps": self.steps,
@@ -347,6 +351,16 @@ class SMBEnv(gym.Env):
         self.scalar_hist = self.scalar_hist[1:] + [scalars]
         return self.make_obs(tiles), reward, terminated, truncated, info
 
+    def area_of(self, ram):
+        """0 in the level's main area, else area pointer + 1."""
+        if self.level not in self.main_area:
+            # The level's own start state is always in its main area.
+            self.emu.em.set_state(self.states[self.level])
+            self.main_area[self.level] = int(self.emu.get_ram()[RAM.AREA_POINTER])
+            self.emu.em.set_state(self.start_state or self.states[self.level])
+        ptr = int(ram[RAM.AREA_POINTER])
+        return 0 if ptr == self.main_area[self.level] else ptr + 1
+
     @property
     def start_bin(self):
         """Frontier key of this episode's restart point (demo names start with their explorer key)."""
@@ -360,25 +374,25 @@ class SMBEnv(gym.Env):
         return attempts >= HOPELESS_ATTEMPTS and passes == 0
 
     def commit_frontier(self, last_safe_step):
-        """Keep this episode's safe snapshots; returns the furthest safe bin (-1 if none)."""
+        """Keep this episode's safe snapshots; returns the key of the last one (-1 if none)."""
         if not self.pending:
             return -1
         if self.level not in self.frontier:
             self.load_frontier(self.level)
         frontier = self.frontier[self.level]
         stats = self.bin_stats.setdefault(self.level, {})
-        safe_bin = -1
+        safe_key = -1
         for step, b, state in self.pending:
             if step > last_safe_step:
                 continue
-            safe_bin = max(safe_bin, b)
+            safe_key = b
             if b not in frontier or self.is_hopeless(self.level, b) or self.rng.random() < 0.5:
                 frontier[b] = state
                 stats.pop(b, None)   # new snapshot, fresh stats
         self.pending = []
         if self.frontier_dir and self.episode_id % SAVE_FRONTIER_EVERY == 0:
             self.save_frontier()
-        return safe_bin
+        return safe_key
 
     def save_frontier(self):
         # Shared across envs (last writer wins); seeds restarts after a resume.
