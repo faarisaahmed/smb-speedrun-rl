@@ -46,6 +46,9 @@ ACTIONS = [
 HISTORY = 2
 
 # Reward shaping. Progress is in pixels; a full level is ~3000-3500 px.
+# It's paid on new furthest x, so every route to the same point (walking, a
+# pipe that skips ahead, a glitch) earns the same progress reward and the
+# faster one wins on TIME_PENALTY.
 PROGRESS_SCALE = 1 / 20
 TIME_PENALTY = 0.01      # per agent step, so faster finishes score higher
 DEATH_PENALTY = 3.0
@@ -233,6 +236,7 @@ class SMBEnv(gym.Env):
         self.steps = 0
         self.frames = 0
         self.since_progress = 0
+        self.area_best = self.max_x   # furthest x in the current area (bonus rooms restart x)
         self.actions, self.xs, self.ys = [], [], []
         self.anomalies = []
         self.pending = []   # (step, bin, state) snapshots awaiting commit
@@ -268,6 +272,7 @@ class SMBEnv(gym.Env):
             self.anomalies.append([self.steps, int(dx)])
         if abs(dx) >= AREA_CHANGE_DX:
             self.area_changed = True
+            self.area_best = x
         self.prev_x = x
         # Only snapshot with Mario standing on something: a mid-air snapshot can
         # be a fall that's already doomed but takes longer than SAFE_STEPS.
@@ -276,9 +281,12 @@ class SMBEnv(gym.Env):
             self.next_bin = x // FRONTIER_BIN + 1
             self.pending.append((self.steps, x // FRONTIER_BIN, self.emu.em.get_state()))
 
-        reward = float(np.clip(dx, -15, 15)) * PROGRESS_SCALE - TIME_PENALTY
-        if x > self.max_x:
-            self.max_x = x
+        reward = max(0, x - self.max_x) * PROGRESS_SCALE - TIME_PENALTY
+        self.max_x = max(self.max_x, x)
+        # "Stuck" is judged within the current area, so a bonus room (where x
+        # starts over) doesn't count as no progress.
+        if x > self.area_best:
+            self.area_best = x
             self.since_progress = 0
         else:
             self.since_progress += 1
