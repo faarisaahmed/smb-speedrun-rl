@@ -18,21 +18,22 @@ Training is still running, so these keep dropping.
 
 | level | best | | level | best |
 |---|---|---|---|---|
-| 1-1 | 21.28 s | | 4-3 | 17.85 s |
-| 1-3 | 16.66 s | | 5-1 | 23.61 s |
-| 2-1 | 26.69 s | | 5-2 | 21.55 s |
-| 2-3 | 24.04 s | | 6-2 | 37.34 s |
-| 3-1 | 26.44 s | | 6-3 | 20.38 s |
-| 3-2 | 22.46 s | | 7-1 | 23.25 s |
-| 3-3 | 16.22 s | | 7-3 | 24.06 s |
-| 4-1 | 25.44 s | | 8-3 | 25.87 s |
+| 1-1 | 21.28 s | | 5-1 | 22.81 s |
+| 1-3 | 16.66 s | | 5-2 | 21.41 s |
+| 2-1 | 24.06 s | | 6-2 | 32.93 s |
+| 2-3 | 24.04 s | | 6-3 | 18.10 s |
+| 3-1 | 22.48 s | | 7-1 | 20.08 s |
+| 3-2 | 22.41 s | | 7-3 | 24.03 s |
+| 3-3 | 16.21 s | | 8-1 | 44.18 s |
+| 4-1 | 24.09 s | | 8-3 | 23.18 s |
+| 4-3 | 15.77 s | | | |
 
-16 of the 17 training levels have been cleared at least once; 8-1 not yet.
+All 17 outdoor training levels have been cleared at least once (as of 180M steps).
 
 Milestones:
 - **1-1:** first clear after 252k steps (33.8 s), 21.5 s by 12M.
 - **1-3:** stuck at the first tall tree for ~75M steps, then cleared at 97M.
-- **Every outdoor training level:** unlocked at 98M; 16 of 17 cleared by 130M. 5-3, 6-1 and 8-2 are never
+- **Every outdoor training level:** unlocked at 98M; all 17 cleared by 162M. 5-3, 6-1 and 8-2 are never
   trained on; they're held out to test whether it can play levels it has never seen.
 
 Along the way it found the 1-1 bonus pipe on its own.
