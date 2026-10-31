@@ -46,7 +46,7 @@ ACTIONS = [
 HISTORY = 2
 
 # Reward shaping. Progress is in pixels; a full level is ~3000-3500 px.
-# It's paid on new furthest x, so every route to the same point (walking, a
+# It's paid on new furthest x in the main area, so every route to the same point (walking, a
 # pipe that skips ahead, a glitch) earns the same progress reward and the
 # faster one wins on TIME_PENALTY.
 PROGRESS_SCALE = 1 / 20
@@ -246,6 +246,10 @@ class SMBEnv(gym.Env):
         self.pending = []   # (step, bin, state) snapshots awaiting commit
         self.area = self.area_of(ram)
         self.next_bin = {self.area: self.max_x // FRONTIER_BIN + 1}   # per area
+        if self.area:
+            # Restarted in a bonus room: main-level progress is unknown, so
+            # getting back out pays for all of it.
+            self.max_x = 0
         tiles, objs, scalars = observe(ram)
         self.obj_hist = [objs] * HISTORY
         self.scalar_hist = [scalars] * HISTORY
@@ -286,8 +290,12 @@ class SMBEnv(gym.Env):
             self.next_bin[self.area] = b + 1
             self.pending.append((self.steps, self.area * AREA_KEY + b, self.emu.em.get_state()))
 
-        reward = max(0, x - self.max_x) * PROGRESS_SCALE - TIME_PENALTY
-        self.max_x = max(self.max_x, x)
+        # Progress only counts in the level's main area: a bonus room's x is
+        # unrelated to it (6-2's first room starts ~1800 px past its pipe).
+        reward = -TIME_PENALTY
+        if self.area == 0:
+            reward += max(0, x - self.max_x) * PROGRESS_SCALE
+            self.max_x = max(self.max_x, x)
         # "Stuck" is judged within the current area, so a bonus room (where x
         # starts over) doesn't count as no progress.
         if x > self.area_best:
