@@ -8,6 +8,9 @@ The camera follows the leading ghost.
   python ghosts.py --level 1-1 --at 2000000 --count 300
   python ghosts.py --level 1-1 --at latest
   python ghosts.py --level 1-1 --panorama-only     # just save the level image
+  python ghosts.py --level 1-1 --checkpoint runs/main/checkpoints/step_0000500000.zip
+      # fresh attempts played by a saved policy, for points in training whose
+      # recorded episodes are gone
 
 The panorama is stitched from screen columns as they scroll into view, so an
 enemy that happened to be at the right edge can get baked in.
@@ -98,6 +101,24 @@ def draw_sprite(view, sprite, mask, sx, sy, alpha):
     region[m] = region[m] * (1 - alpha) + sprite[y0 - sy:y1 - sy, x0 - sx:x1 - sx][m] * alpha
 
 
+def play_checkpoint(path, level, count):
+    """count attempts from the level start by a saved policy, sampling its actions as in training."""
+    from stable_baselines3 import PPO
+    model = PPO.load(path, device="cpu")
+    env = SMBEnv([level], rank=95)
+    episodes = []
+    for _ in range(count):
+        obs, _ = env.reset(options={"level": level})
+        while True:
+            action, _ = model.predict(obs, deterministic=False)
+            obs, _, terminated, truncated, info = env.step(int(action))
+            if terminated or truncated:
+                break
+        episodes.append((info["episode_meta"], np.array(env.actions), np.array(env.xs), np.array(env.ys)))
+    env.close()
+    return episodes
+
+
 def build_panorama(env, level, actions):
     """Replay a long run and stitch each newly revealed screen column."""
     env.reset(options={"level": level})
@@ -124,10 +145,13 @@ def main():
     p.add_argument("--count", type=int, default=300)
     p.add_argument("--out")
     p.add_argument("--panorama-only", action="store_true")
+    p.add_argument("--checkpoint", help="play --count new attempts with this saved policy instead")
     args = p.parse_args()
 
     run_dir = os.path.join("runs", args.run)
     episodes = load_episodes(run_dir, args.level)
+    played = play_checkpoint(args.checkpoint, args.level, args.count) if args.checkpoint else []
+    episodes = episodes or played
     if not episodes:
         print("no recorded episodes for", args.level, "yet (they're flushed every 200 per env)")
         return
@@ -147,7 +171,9 @@ def main():
         print("wrote", pano_path)
         return
 
-    if args.at == "first":
+    if played:
+        batch = played
+    elif args.at == "first":
         batch = episodes[:args.count]
     elif args.at == "latest":
         batch = episodes[-args.count:]
@@ -156,7 +182,10 @@ def main():
         i = int(np.argmin([abs(clock(ep[0]["time"]) - target) for ep in episodes]))
         lo = max(0, min(i - args.count // 2, len(episodes) - args.count))
         batch = episodes[lo:lo + args.count]
-    approx = int(np.mean([clock(ep[0]["time"]) for ep in batch]))
+    if played:
+        approx = int(os.path.basename(args.checkpoint)[len("step_"):-len(".zip")])
+    else:
+        approx = int(np.mean([clock(ep[0]["time"]) for ep in batch]))
     cleared = sum(ep[0]["outcome"] == "flag" for ep in batch)
 
     out = args.out or os.path.join("videos", "ghosts", f"{args.level}_{args.at}.mp4")
