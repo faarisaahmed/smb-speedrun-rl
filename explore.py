@@ -21,7 +21,7 @@ import time
 
 import numpy as np
 
-from smb.env import ACTIONS, DEMO_DIR, FRONTIER_BIN, SMBEnv
+from smb.env import ACTIONS, AREA_KEY, DEMO_DIR, FRONTIER_BIN, SMBEnv
 from smb.ram import RAM, x_pos
 
 TARGET_MARGIN = 64   # px past where the policy usually dies
@@ -31,17 +31,27 @@ REPEAT_PROB = 0.9    # chance of holding the previous button combo another step
 MAX_STEPS = 150
 SAVE_EVERY = 3       # steps between demo snapshots
 KEEP_BEST = 10       # successes to collect before keeping the shortest
+# A restart point's wall only counts if runs from the level start fail there
+# too: if they get past it this often, the restart point is just an awkward
+# state, and a demo out of it can teach a worse move (8-1, 570M: a no-run
+# jump through the piranha pipes dropped 8-1 from 34% to 3%).
+FROM_START_PASS = 0.2
 
 
 def recent_reach(run_dir, level, hours):
-    """{start bin: [max_x of each recent mid-level attempt]} plus flag counts."""
+    """{start bin: [max_x of each recent mid-level attempt]} plus flag counts.
+
+    Attempts from the level start are under the key "start".
+    """
     since = time.time() - hours * 3600
     reach, flags = collections.defaultdict(list), collections.Counter()
     for path in glob.glob(os.path.join(run_dir, "episodes", "*.npz")):
         if os.path.getmtime(path) < since:
             continue
         for m in json.loads(str(np.load(path)["meta"])):
-            if m["level"] == level and not m.get("from_start", True) and m["time"] >= since:
+            if m["level"] == level and m.get("from_start", True) and m["time"] >= since:
+                reach["start"].append(m["max_x"])
+            elif m["level"] == level and m["time"] >= since:
                 b = m.get("start_bin")
                 if b is None:   # older episodes, before area keys
                     b = m["start_x"] // FRONTIER_BIN
@@ -97,6 +107,7 @@ def main():
         d = os.path.join(run_dir, "frontier", level)
         reach, flags = recent_reach(run_dir, level, args.hours)
         walled = []
+        from_start = np.array(reach.get("start", []))
         for f in os.listdir(d) if os.path.isdir(d) else []:
             if not f.endswith(".state") or f.startswith("."):
                 continue
@@ -105,8 +116,13 @@ def main():
             if len(xs) < MIN_ATTEMPTS or flags[b] / len(xs) >= 0.5:
                 continue
             target = int(np.median(xs)) + TARGET_MARGIN
-            if np.mean(xs >= target) < WALL_RATE:
-                walled.append((b, target, os.path.join(d, f)))
+            if np.mean(xs >= target) >= WALL_RATE:
+                continue
+            if b < AREA_KEY:
+                arrived = from_start[from_start >= b * FRONTIER_BIN]
+                if len(arrived) >= MIN_ATTEMPTS and np.mean(arrived >= target) >= FROM_START_PASS:
+                    continue
+            walled.append((b, target, os.path.join(d, f)))
         # Furthest starts first: they're closest to their wall, and one success
         # covers the earlier starts that die at the same wall.
         walled.sort(key=lambda w: -w[0])
