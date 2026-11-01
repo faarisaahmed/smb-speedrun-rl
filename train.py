@@ -114,8 +114,9 @@ class CurriculumCallback(BaseCallback):
 
     def apply_levels(self):
         levels = self.levels()
-        # Spend more time on levels the agent is bad at.
-        weights = [1.0 - 0.8 * self.success(l) for l in levels]
+        # Spend more time on levels the agent is bad at: squared, so a level it
+        # never clears gets ~10x the episodes of one it has mastered.
+        weights = [0.1 + 0.9 * (1.0 - self.success(l)) ** 2 for l in levels]
         self.training_env.env_method("set_levels", levels, weights)
 
     def _on_step(self):
