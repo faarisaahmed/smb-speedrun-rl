@@ -25,6 +25,7 @@ import imageio
 import numpy as np
 
 from smb.env import ACTIONS, SMBEnv
+from smb.human import HumanGhost, luigi
 from smb.obs import screen_left
 from smb.ram import RAM, x_pos
 from smb.viz import draw_pad
@@ -161,6 +162,8 @@ def main():
     furthest = max(episodes, key=lambda ep: ep[0]["max_x"])
     pano = build_panorama(env, args.level, furthest[1])
     sprite, mask = mario_sprite(env)
+    luigi_sprite, _ = luigi(sprite, mask)
+    human = HumanGhost(run_dir, args.level)
     env.close()
     clock = step_clock(run_dir)
     for folder in ("other", "ghosts"):
@@ -209,6 +212,9 @@ def main():
         if alive:
             x, y, held = max(alive)
             draw_sprite(view, sprite, mask, x - c, y - 256 + 16 - TOP, 1.0)
+        pos = human.at(t * batch[0][0]["frame_skip"])
+        if pos is not None:
+            draw_sprite(view, luigi_sprite, mask, pos[0] - c, pos[1] - 256 + 16 - TOP, 1.0)
         view = view.astype(np.uint8)
         for x, y in deaths:
             sx, sy = x - c + 8, min(y - 256 + 24 - TOP, view.shape[0] - 6)
@@ -218,6 +224,9 @@ def main():
         text = f"{args.level}   ~{approx:,} training steps   {len(alive)} alive   {cleared}/{len(batch)} cleared"
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 5, cv2.LINE_AA)
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+        if human.ok:
+            cv2.putText(big, human.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 5, cv2.LINE_AA)
+            cv2.putText(big, human.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (60, 200, 60), 2, cv2.LINE_AA)
         if alive:   # the solid (leading) ghost's buttons
             draw_pad(big, 12, big.shape[0] - 106, ACTIONS[held], unit=1.3)
         writer.append_data(big[:, :, ::-1])
