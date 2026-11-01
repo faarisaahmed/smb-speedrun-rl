@@ -14,7 +14,8 @@ class RAM:
     STAGE = 0x075C
     WORLD = 0x075F
     AREA = 0x0760
-    AREA_POINTER = 0x0750  # which area (main level, bonus room, ...) is loaded
+    AREA_TYPE = 0x074E     # 0 water, 1 ground, 2 underground, 3 castle
+    AREA_INDEX = 0x074F    # which area of that type; (type, index) identifies the area
     GAME_MODE = 0x0770     # 0 title/demo, 1 playing, 2 end of world, 3 game over
     TIMER = 0x07F8         # three BCD-ish digits, 0x07F8..0x07FA
 

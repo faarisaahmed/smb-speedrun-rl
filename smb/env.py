@@ -77,8 +77,8 @@ PASS_BINS = 4
 HOPELESS_ATTEMPTS = 100   # a restart point with this many attempts and no passes gets replaced
 SAVE_FRONTIER_EVERY = 100  # episodes between writing this env's restart points to disk
 AREA_CHANGE_DX = 256   # pipes / bonus rooms / vines: x jumps to another area
-# Frontier key = x bin in the level's main area, and (area pointer + 1) *
-# AREA_KEY + x bin in a sub-area, so bonus rooms get restart points of their own.
+# Frontier key = x bin in the level's main area, and (area id + 1) * AREA_KEY
+# + x bin in a sub-area, so bonus rooms get restart points of their own.
 AREA_KEY = 1000
 # Some jumps need inputs held exactly for many steps, which random exploration
 # essentially never finds. Snapshots taken every few steps along one of the
@@ -87,6 +87,11 @@ AREA_KEY = 1000
 # few inputs have to be right, and the failure weighting walks practice back
 # toward the take-off as those get learned (the "backward" algorithm).
 DEMO_DIR = "demo"
+
+
+def area_id(ram):
+    # (Not 0x0750, the "area pointer": it changes partway through some levels.)
+    return int(ram[RAM.AREA_TYPE]) * 32 + int(ram[RAM.AREA_INDEX])
 
 
 def load_state(name):
@@ -160,7 +165,7 @@ class SMBEnv(gym.Env):
         self.frontier_dir = frontier_dir
         self.frontier = {}   # level -> {bin: emulator state}
         self.demo = {}       # level -> {("demo", step): emulator state}, never replaced
-        self.main_area = {}  # level -> area pointer of its main area
+        self.main_area = {}  # level -> area id of its main area
         self.bin_stats = {}  # level -> {bin or demo key: [attempts, passes]} for restarts from it
         self.set_levels(levels)
         self.button_arrays = [button_array(b) for b in ACTIONS]
@@ -231,6 +236,12 @@ class SMBEnv(gym.Env):
         if start is None and "level" not in options:
             start = self.pick_frontier(level)
         self.start_state = start
+        if level not in self.main_area:
+            # The level's own start state is always in its main area. (A full
+            # reset, not set_state, so the episode below stays frame-exact.)
+            self.emu.initial_state = self.states[level]
+            self.env.reset()
+            self.main_area[level] = area_id(self.emu.get_ram())
         self.emu.initial_state = start or self.states[level]
         obs, _ = self.env.reset()
         self.screen = obs
@@ -360,14 +371,9 @@ class SMBEnv(gym.Env):
         return self.make_obs(tiles), reward, terminated, truncated, info
 
     def area_of(self, ram):
-        """0 in the level's main area, else area pointer + 1."""
-        if self.level not in self.main_area:
-            # The level's own start state is always in its main area.
-            self.emu.em.set_state(self.states[self.level])
-            self.main_area[self.level] = int(self.emu.get_ram()[RAM.AREA_POINTER])
-            self.emu.em.set_state(self.start_state or self.states[self.level])
-        ptr = int(ram[RAM.AREA_POINTER])
-        return 0 if ptr == self.main_area[self.level] else ptr + 1
+        """0 in the level's main area, else area id + 1."""
+        area = area_id(ram)
+        return 0 if area == self.main_area[self.level] else area + 1
 
     @property
     def start_bin(self):
