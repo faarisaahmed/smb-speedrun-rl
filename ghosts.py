@@ -122,7 +122,7 @@ def play_checkpoint(path, level, count):
 def build_panorama(env, level, actions):
     """Replay a long run and stitch each newly revealed screen column."""
     env.reset(options={"level": level})
-    pano = np.zeros((224 - (TOP - CROP), 16 * 256, 3), np.uint8)
+    pano = np.zeros((224 - (TOP - CROP), 32 * 256, 3), np.uint8)   # 8-1 is over 16 screens long
     filled = 0
     for a in actions:
         _, _, term, trunc, _ = env.step(int(a))
