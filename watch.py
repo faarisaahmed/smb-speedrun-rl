@@ -24,7 +24,7 @@ import numpy as np
 import torch
 from stable_baselines3 import PPO
 
-from smb.env import SMBEnv
+from smb.env import ACTIONS, SMBEnv
 from smb.obs import observe
 from smb.viz import frame
 
@@ -100,7 +100,7 @@ def main():
                 f"time {env.frames / NES_FPS:6.2f}s",
                 f"best {best / NES_FPS:.2f}s" if best else "best  --",
             ]
-            img = frame(env.screen, tiles, objs, lines)
+            img = frame(env.screen, tiles, objs, lines, buttons=ACTIONS[int(action)])
             if writer:
                 writer.append_data(img[:, :, ::-1])
             else:

@@ -16,12 +16,13 @@ import base64
 import json
 import os
 
+import cv2
 import imageio
 import numpy as np
 
-from smb.env import SMBEnv
+from smb.env import ACTIONS, SMBEnv
 from smb.obs import observe
-from smb.viz import frame
+from smb.viz import draw_pad, frame
 
 NES_FPS = 60.0988
 
@@ -89,14 +90,16 @@ def main():
         for step, action in enumerate(run["actions"], 1):
             _, _, terminated, truncated, info = env.step(action)
             if args.plain:
-                img = np.ascontiguousarray(env.screen)
+                img = cv2.cvtColor(np.ascontiguousarray(env.screen), cv2.COLOR_RGB2BGR)
+                draw_pad(img, 6, img.shape[0] - 46, ACTIONS[action], unit=0.55)
+                img = img[:, :, ::-1]
             else:
                 tiles, objs, _ = observe(env.emu.get_ram())
                 lines = [f"level {run['level']}", title, f"at {run['timesteps']:,} steps",
                          f"time {env.frames / NES_FPS:6.2f}s"]
                 if step in anomaly_steps:
                     lines.append("!! position jump")
-                img = frame(env.screen, tiles, objs, lines)[:, :, ::-1]
+                img = frame(env.screen, tiles, objs, lines, buttons=ACTIONS[action])[:, :, ::-1]
             writer.append_data(img)
             if terminated or truncated:
                 break

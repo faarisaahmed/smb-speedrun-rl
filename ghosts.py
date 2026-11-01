@@ -21,9 +21,10 @@ import cv2
 import imageio
 import numpy as np
 
-from smb.env import SMBEnv
+from smb.env import ACTIONS, SMBEnv
 from smb.obs import screen_left
 from smb.ram import RAM, x_pos
+from smb.viz import draw_pad
 
 NES_FPS = 60.0988
 # stable-retro's 240x224 NES image crops 8 px off each side and the top, so
@@ -165,19 +166,19 @@ def main():
     deaths = []
     cam = 0.0
     for t in range(longest + 30):
-        alive = [(ep[2][t], ep[3][t]) for ep in batch if t < len(ep[1])]
+        alive = [(ep[2][t], ep[3][t], ep[1][t]) for ep in batch if t < len(ep[1])]
         for ep in batch:
             if len(ep[1]) == t and ep[0]["outcome"] == "death":
                 deaths.append((ep[2][-1], ep[3][-1]))
-        lead = max((x for x, _ in alive), default=cam + 100)
+        lead = max((x for x, _, _ in alive), default=cam + 100)
         cam += (min(max(lead - 100, 0), pano.shape[1] - SCREEN_W) - cam) * 0.15
         c = int(cam)
 
         view = pano_bgr[:, c:c + SCREEN_W].astype(np.float32)
-        for x, y in alive:
+        for x, y, _ in alive:
             draw_sprite(view, sprite, mask, x - c, y - 256 + 16 - TOP, GHOST_ALPHA)
         if alive:
-            x, y = max(alive)
+            x, y, held = max(alive)
             draw_sprite(view, sprite, mask, x - c, y - 256 + 16 - TOP, 1.0)
         view = view.astype(np.uint8)
         for x, y in deaths:
@@ -188,6 +189,8 @@ def main():
         text = f"{args.level}   ~{approx:,} training steps   {len(alive)} alive   {cleared}/{len(batch)} cleared"
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 5, cv2.LINE_AA)
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+        if alive:   # the solid (leading) ghost's buttons
+            draw_pad(big, 12, big.shape[0] - 106, ACTIONS[held], unit=1.3)
         writer.append_data(big[:, :, ::-1])
     writer.close()
     print(f"wrote {out} ({len(batch)} attempts, {cleared} cleared)")
