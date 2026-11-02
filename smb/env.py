@@ -322,9 +322,13 @@ class SMBEnv(gym.Env):
 
         died = ram[RAM.PLAYER_STATE] in (RAM.DYING, RAM.DEAD) or ram[RAM.Y_PAGE] > 1
         flag = ram[RAM.FLOAT_STATE] == RAM.FLAGPOLE
-        terminated = died or flag
-        truncated = not terminated and (self.since_progress >= STUCK_STEPS or self.steps >= MAX_STEPS)
-        if died:
+        # Stalling ends the episode and costs as much as dying. As a bootstrapped
+        # truncation it was nearly free, so the agent learned to wait out
+        # piranha pipes forever (29% of 6-2 attempts) rather than risk them.
+        stalled = not (died or flag) and self.since_progress >= STUCK_STEPS
+        terminated = died or flag or stalled
+        truncated = not terminated and self.steps >= MAX_STEPS
+        if died or stalled:
             reward -= DEATH_PENALTY
         if flag:
             reward += FLAG_BONUS
