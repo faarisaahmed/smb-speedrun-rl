@@ -34,12 +34,19 @@ NES_FPS = 60.0988
 CROP = 8                  # stable-retro's screen drops 8 px off every side of the 256x240 picture
 PLAY_ROW = TOP - CROP     # first screen row below the status bar
 LEVEL_CHARS = (16, 144)   # screen (row, col) of the "W-L" under WORLD, 3 glyphs 8 px wide
-SEARCH = (-12, 20)        # scroll change per frame we look for (px)
+SEARCH = (0, 20)          # scroll change per frame we look for (px); SMB never scrolls back
 MIN_SCROLL_MATCH = 0.5    # correlation below this: not this level's main area (pipe room, transition)
+MAX_FLAT = 0.97           # share of playfield pixels in one color above this: a blank screen
+GOOD_SCROLL_MATCH = 0.8   # only frames matched this well teach the color fit
+START_LEFT = 16           # scroll at most this far in: the level's opening view
+REACQUIRE_AFTER = 10      # weak frames in a row before searching the whole level again (out of a pipe)
 # Mario's colors in our emulator: small/big (red, skin, brown) and fire (white, red, skin).
 MARIO_PALETTE = np.array(MARIO_COLORS + [(252, 252, 252)], np.float32)
 START = (40, 176)         # Mario's (x, feet row) on every level's first frame
 SPRITE_W, SPRITE_H = 20, 32   # template box: Mario's 16 px plus 2 each side, tall enough for big Mario
+MAX_VX, MAX_VF = 4, 8      # px per frame: Mario never moves faster (bounds the guess after a jump in tracking)
+RUN_SPEED = 2.5           # px per frame, Mario at full run
+MAX_FLAG_REACH = 160      # px short of the flag that his last tracked speed may be carried on
 REACH = 24                # px from where Mario should be that a match may be, plus...
 REACH_PER_LOST = 6        # ...this much per frame he's been lost
 MAX_RMS = 45              # color error (0-255) above which a match isn't Mario
@@ -187,20 +194,44 @@ class Tracker:
         self.mario = START      # (x, feet row) in panorama coordinates
         self.velocity = (0, 0)
         self.lost = 0
+        self.weak = REACQUIRE_AFTER   # search the whole level for the first frame
 
     def scroll(self, play):
-        """Find the screen's world x by matching the playfield against the panorama."""
-        g = cv2.cvtColor(play, cv2.COLOR_RGB2GRAY).astype(np.float32)
-        lo = max(0, self.left + SEARCH[0])
-        hi = min(self.pano.shape[1], self.left + SEARCH[1] + g.shape[1])
-        if hi - lo < g.shape[1]:
+        """Find the screen's world x by matching the playfield against the panorama.
+
+        Matched in color, not gray: a capture's palette differs from the
+        emulator's (1-1's sky is purple in Niftski's video) and gray levels
+        then don't line up, which pulled the match off course.
+        """
+        p = play.astype(np.float32)
+        w = p.shape[1]
+        median = np.median(p.reshape(-1, 3), axis=0)
+        if np.mean(np.abs(p - median).max(axis=2) < 12) > MAX_FLAT:
+            # A blank sky-colored screen (drawn before the level after a pipe):
+            # correlation against a flat image is meaningless (it came out 1.0).
+            self.weak += 1
             return 0.0
-        res = cv2.matchTemplate(self.pano_gray[:, lo:hi], g, cv2.TM_CCOEFF_NORMED)
+        anywhere = self.weak >= REACQUIRE_AFTER
+        if anywhere:
+            lo, hi = self.left, self.pano.shape[1]   # anywhere further on (out of a pipe)
+        else:
+            lo = max(0, self.left + SEARCH[0])
+            hi = min(self.pano.shape[1], self.left + SEARCH[1] + w)
+        if hi - lo < w:
+            return 0.0
+        res = cv2.matchTemplate(self.pano[:, lo:hi], p, cv2.TM_CCOEFF_NORMED)
         i = int(np.argmax(res))
+        score = float(res[0, i])
+        # Searching the whole level needs a clearly better match: stretches of
+        # flat ground and bushes look alike (1-1's pipe exit vs its start).
+        if score < (GOOD_SCROLL_MATCH if anywhere else MIN_SCROLL_MATCH):
+            self.weak += 1
+            return score
+        self.weak = 0
         self.left = lo + i
-        view = self.pano[:, self.left:self.left + g.shape[1]]
-        self.colors.add(view, play.astype(np.float32))
-        return float(res[0, i])
+        if score >= GOOD_SCROLL_MATCH:
+            self.colors.add(self.pano[:, self.left:self.left + w], p)
+        return score
 
     def find_mario(self, screen):
         """Mario's (x, feet row) in panorama coordinates, or None.
@@ -211,6 +242,10 @@ class Tracker:
         steps = self.lost + 1
         gx = self.mario[0] + self.velocity[0] * steps - self.left              # expected screen column of his x
         gf = self.mario[1] + self.velocity[1] * steps + PLAY_ROW               # expected screen row of his feet
+        # Keep the guess on screen: after a pipe or a bad match it can drift off,
+        # which left nothing to search.
+        gx = min(max(gx, 0), screen.shape[1] - SPRITE_W)
+        gf = min(max(gf, SPRITE_H), screen.shape[0])
         reach = int(REACH + REACH_PER_LOST * self.lost)
         c0, c1 = max(0, int(gx) - 2 - reach), min(screen.shape[1], int(gx) - 2 + SPRITE_W + reach)
         r0, r1 = max(0, int(gf) - SPRITE_H - reach), min(screen.shape[0], int(gf) + reach)
@@ -234,7 +269,8 @@ class Tracker:
             return None
         feet, col = best[1]
         x, feet = self.left + c0 + col, r0 + feet - PLAY_ROW
-        self.velocity = ((x - self.mario[0]) / steps, (feet - self.mario[1]) / steps)
+        vx, vf = (x - self.mario[0]) / steps, (feet - self.mario[1]) / steps
+        self.velocity = (min(max(vx, -MAX_VX), MAX_VX), min(max(vf, -MAX_VF), MAX_VF))
         self.mario, self.lost = (x, feet), 0
         return self.mario
 
@@ -243,22 +279,35 @@ def track(video, crop, panoramas, glyphs, sprites):
     """{level: [(nes frame, x, y) ...]} for each of our levels seen in the video."""
     reader = imageio.get_reader(video)
     fps = reader.get_meta_data()["fps"]
-    paths, level, tracker, t0 = {}, None, None, None
+    paths, level, tracker, t0, blank = {}, None, None, None, True
+    done = set()   # levels already played through: later footage (a reset, a replay) is ignored
     colors = ColorFit()
     for i, frame in enumerate(reader):
         screen = nes_screen(frame, crop)
         shown = read_level(screen, glyphs)
-        if shown != level or not is_playing(screen):
-            if shown != level:
-                level, tracker, t0 = shown, None, None
+        # Compressed video makes the status bar unreadable for a frame now and
+        # then, and transitions blank the screen: those are gaps, not new levels.
+        if shown is not None and shown != level:
+            if level is not None:
+                done.add(level)
+            level, tracker, t0 = shown, None, None
+        if not is_playing(screen):
+            blank = True
             continue
-        if level not in panoramas:
+        if shown is None or level not in panoramas or level in done:
             continue
-        if tracker is None:
-            tracker, t0 = Tracker(panoramas[level], colors, sprites), i
-            paths[level] = []
-        nes_frame = int(round((i - t0) / fps * NES_FPS))
         play = screen[PLAY_ROW:]
+        if blank:
+            # The level's opening view after a blank screen: its real start,
+            # after the title demo, a reset or a death. Start it over from here.
+            fresh = Tracker(panoramas[level], colors, sprites)
+            if fresh.scroll(play) >= MIN_SCROLL_MATCH and fresh.left <= START_LEFT:
+                tracker, t0 = fresh, i
+                paths[level] = []
+            blank = False
+        if tracker is None:
+            continue
+        nes_frame = int(round((i - t0) / fps * NES_FPS))
         if tracker.scroll(play) < MIN_SCROLL_MATCH:
             paths[level].append((nes_frame, None, None))
             continue
@@ -267,6 +316,28 @@ def track(video, crop, panoramas, glyphs, sprites):
         # (his feet are 256 px below y in panorama rows).
         paths[level].append((nes_frame, m[0], m[1] + 256) if m else (nes_frame, None, None))
     return paths
+
+
+def flag_frame(found, target):
+    """The frame Mario reaches x >= target, from (frame, x, y) tracked points.
+
+    Runners grab the flagpole from a high jump, often above the screen top,
+    then slide in a pose our sprites don't have (our runs stop at the touch),
+    so the touch itself is rarely seen: carry his last tracked speed on to it.
+    """
+    seen = next((f for f, x, _ in found if x >= target), None)
+    before = [(f, x) for f, x, _ in found if x < target and (seen is None or f < seen)]
+    if not before:
+        return seen
+    f1, x1 = before[-1]
+    if seen is not None and seen - f1 <= 4 or target - x1 > MAX_FLAG_REACH:
+        return seen
+    recent = [(f, x) for f, x in before if f1 - f <= 60]
+    f0, x0 = recent[0]
+    # Too little to go on (one tracked point): assume he's at full run.
+    speed = (x1 - x0) / (f1 - f0) if f1 > f0 and x1 > x0 else RUN_SPEED
+    est = f1 + int(np.ceil((target - x1) / speed))
+    return est if seen is None else min(seen, est)
 
 
 def main():
@@ -321,7 +392,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     for level, path in track(args.video, crop, panoramas, glyphs, sprites).items():
         found = [(f, x, y) for f, x, y in path if x is not None]
-        flag = next((f for f, x, _ in found if x >= flag_x[level] - 4), None)
+        flag = flag_frame(found, flag_x[level] - 4)
         n = max(f for f, _, _ in path) + 1
         xs, ys = [None] * n, [None] * n
         for f, x, y in found:
