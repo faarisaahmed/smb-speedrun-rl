@@ -50,6 +50,13 @@ LEVELS = ["1-1", "1-3", "2-1", "2-3", "3-1", "3-2", "3-3", "4-1", "4-3", "5-1",
 def nes_screen(frame, crop):
     """The video frame's game area as a stable-retro-sized RGB screen (224x240)."""
     x, y, w, h = crop
+    # Captures often show only the 224 visible rows, so the crop can reach
+    # past the frame's edges; that border is cut off below anyway.
+    fh, fw = frame.shape[:2]
+    pad = max(0, -y, y + h - fh, -x, x + w - fw)
+    if pad:
+        frame = cv2.copyMakeBorder(frame, pad, pad, pad, pad, cv2.BORDER_CONSTANT)
+        x, y = x + pad, y + pad
     nes = cv2.resize(frame[y:y + h, x:x + w], (256, 240), interpolation=cv2.INTER_AREA)
     return nes[CROP:240 - CROP, CROP:256 - CROP]
 
