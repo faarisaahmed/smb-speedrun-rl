@@ -20,6 +20,10 @@ N_OBJ = 5
 # Enemy slot RAM (5 enemy slots + slot 5 = powerup).
 ENEMY_FLAG, ENEMY_ID, ENEMY_PAGE, ENEMY_X, ENEMY_Y = 0x0F, 0x16, 0x6E, 0x87, 0xCF
 N_SLOTS = 6
+# Hammer Bros' hammers live in the 9 "misc" object slots, not the enemy slots.
+MISC_STATE, MISC_PAGE, MISC_X, MISC_Y = 0x2A, 0x7A, 0x93, 0xDB
+N_MISC = 9
+HAMMER_BRO = 0x05
 
 PLATFORM_IDS = set(range(0x24, 0x2D)) | {0x32}            # lifts, balance lifts, spring
 ITEM_IDS = {0x2E, 0x2F, 0x30, 0x31, 0x34, 0x35}            # powerup, vine, flags, warp, toad
@@ -78,6 +82,13 @@ def observe(ram):
             cat, width = HOSTILE, 16
         mark(ex, ey + 8, 1, width, cat)
         slots.append([cat / (N_OBJ - 1), (ex - mx) / 256, (ey - my) / 256, 1.0])
+
+    # Misc slots also hold coins popped from blocks, so only read them with a
+    # Hammer Bro around. Before this the agent couldn't see hammers at all.
+    if any(ram[ENEMY_FLAG + i] and ram[ENEMY_ID + i] == HAMMER_BRO for i in range(5)):
+        for k in range(N_MISC):
+            if ram[MISC_STATE + k]:
+                mark(ram[MISC_PAGE + k] * 256 + ram[MISC_X + k], ram[MISC_Y + k], 1, 16, HOSTILE)
 
     if big and not crouch:
         mark(mx, my, 2, 16, MARIO)
