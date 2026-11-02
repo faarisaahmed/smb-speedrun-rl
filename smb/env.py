@@ -45,6 +45,13 @@ ACTIONS = [
 # agent can see which way enemies and platforms are moving.
 HISTORY = 2
 
+# Whether A and B were held on the last step, appended to each step's scalars.
+# A held A can't start a jump (it must be released first), and nothing else in
+# the observation shows it: against a 6-2 pipe the agent kept "pressing" an
+# A it was already holding (12515 dead presses vs 8 real ones) until it stalled.
+N_HELD = 2
+NO_HELD = np.zeros(N_HELD, np.float32)
+
 # Reward shaping. Progress is in pixels; a full level is ~3000-3500 px.
 # It's paid on new furthest x in the main area, so every route to the same point (walking, a
 # pipe that skips ahead, a glitch) earns the same progress reward and the
@@ -169,11 +176,12 @@ class SMBEnv(gym.Env):
         self.bin_stats = {}  # level -> {bin or demo key: [attempts, passes]} for restarts from it
         self.set_levels(levels)
         self.button_arrays = [button_array(b) for b in ACTIONS]
+        self.held = [np.array([b in a for b in ("A", "B")], np.float32) for a in ACTIONS]
         self.action_space = gym.spaces.Discrete(len(ACTIONS))
         self.observation_space = gym.spaces.Dict({
             "tiles": gym.spaces.Box(0, 255, (ROWS, COLS), np.float32),
             "objs": gym.spaces.Box(0, N_OBJ - 1, (HISTORY, ROWS, COLS), np.float32),
-            "scalars": gym.spaces.Box(-np.inf, np.inf, (HISTORY * N_SCALARS,), np.float32),
+            "scalars": gym.spaces.Box(-np.inf, np.inf, (HISTORY * (N_SCALARS + N_HELD),), np.float32),
         })
         self.recorder = EpisodeRecorder(record_dir, rank) if record_dir else None
         self.total_steps = 0
@@ -263,7 +271,7 @@ class SMBEnv(gym.Env):
             self.max_x = 0
         tiles, objs, scalars = observe(ram)
         self.obj_hist = [objs] * HISTORY
-        self.scalar_hist = [scalars] * HISTORY
+        self.scalar_hist = [np.concatenate([scalars, NO_HELD])] * HISTORY
         return self.make_obs(tiles), {"level": level}
 
     def make_obs(self, tiles):
@@ -371,7 +379,7 @@ class SMBEnv(gym.Env):
                 info["start_state"] = base64.b64encode(self.start_state).decode()
         tiles, objs, scalars = observe(ram)
         self.obj_hist = self.obj_hist[1:] + [objs]
-        self.scalar_hist = self.scalar_hist[1:] + [scalars]
+        self.scalar_hist = self.scalar_hist[1:] + [np.concatenate([scalars, self.held[action]])]
         return self.make_obs(tiles), reward, terminated, truncated, info
 
     def area_of(self, ram):
