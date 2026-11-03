@@ -61,6 +61,13 @@ TIME_PENALTY = 0.01      # per agent step, so faster finishes score higher
 DEATH_PENALTY = 3.0
 HURT_PENALTY = 1.0
 FLAG_BONUS = 10.0
+# Curiosity for other areas (pipe rooms, sub-levels). Getting into one takes
+# standing on the right pipe and pressing DOWN, which the policy almost never
+# tries, and the payoff of a shortcut (a few seconds) comes much later. So the
+# first entry into an area in an episode pays NEW_AREA_BONUS / sqrt(1 + times
+# that area has been entered before): it gets tried, then the bonus fades and
+# whether the area is actually faster is left to the usual rewards.
+NEW_AREA_BONUS = 3.0
 STUCK_STEPS = 150        # end the episode if max x hasn't improved in this many steps
 MAX_STEPS = 3000
 
@@ -185,6 +192,7 @@ class SMBEnv(gym.Env):
         })
         self.recorder = EpisodeRecorder(record_dir, rank) if record_dir else None
         self.total_steps = 0
+        self.area_visits = {}   # (level, area) -> entries so far, for NEW_AREA_BONUS
         self.episode_id = 0
         self.screen = None
 
@@ -264,6 +272,7 @@ class SMBEnv(gym.Env):
         self.anomalies = []
         self.pending = []   # (step, bin, state) snapshots awaiting commit
         self.area = self.area_of(ram)
+        self.areas_seen = {self.area}
         self.next_bin = {self.area: self.max_x // FRONTIER_BIN + 1}   # per area
         if self.area:
             # Restarted in a bonus room: main-level progress is unknown, so
@@ -312,6 +321,11 @@ class SMBEnv(gym.Env):
         # Progress only counts in the level's main area: a bonus room's x is
         # unrelated to it (6-2's first room starts ~1800 px past its pipe).
         reward = -TIME_PENALTY
+        if self.area not in self.areas_seen:
+            self.areas_seen.add(self.area)
+            n = self.area_visits.get((self.level, self.area), 0)
+            self.area_visits[(self.level, self.area)] = n + 1
+            reward += NEW_AREA_BONUS / np.sqrt(1 + n)
         if self.area == 0:
             reward += max(0, x - self.max_x) * PROGRESS_SCALE
             self.max_x = max(self.max_x, x)

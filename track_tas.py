@@ -9,9 +9,15 @@ RAM, timed the same way as our episodes:
 Writes runs/<run>/tas/<level>.json: {level, source, flag_frame, x, y, big}, where
 x[f], y[f] are Mario's x and y (as in our episodes) f frames after the level's
 start (the frame he becomes controllable, as in our start states), or None
-outside the level's main area, and big[f] whether he's big (or fire). flag_frame is the first frame on the flagpole.
+outside the level's main area, and big[f] whether he's big (or fire).
+next_start is the frame the following level becomes controllable: what a
+full run is really timed by (after the flag come fireworks, the castle walk
+and the wait for the next 21-frame rule). Also saves <level>.state, the
+emulator at the level's start, for racing the agent from the TAS's situation
+(race_tas.py). flag_frame is the first frame on the flagpole.
 """
 import argparse
+import gzip
 import json
 import os
 
@@ -53,38 +59,47 @@ def main():
     cur = {"level": None, "t0": None, "area": None, "prev": None, "i": -1}
 
     def record(ram):
+        """Returns the level whose start this frame is, if it's one of ours."""
         cur["i"] += 1
         state = ram[RAM.PLAYER_STATE]
         shown = f"{ram[RAM.WORLD] + 1}-{ram[RAM.STAGE] + 1}"
+        started = None
         if ram[RAM.GAME_MODE] == 1 and shown != cur["level"] and cur["prev"] == LOADING and state == NORMAL:
             # A new level's first controllable frame: where our start states are saved.
+            if cur["level"] in paths:
+                paths[cur["level"]]["next_start"] = cur["i"] - cur["t0"]
             cur.update(level=shown, t0=cur["i"], area=area_id(ram))
             if shown in args.levels and shown not in paths:
-                paths[shown] = {"x": [], "y": [], "big": [], "flag_frame": None}
+                paths[shown] = {"x": [], "y": [], "big": [], "flag_frame": None, "next_start": None}
+                started = shown
                 print(f"{shown} starts", flush=True)
         cur["prev"] = state
         path = paths.get(cur["level"])
         if path is None or path["flag_frame"] is not None:
-            return
+            return started
         main = area_id(ram) == cur["area"]
         path["x"].append(int(x_pos(ram)) if main else None)
         path["y"].append(int(y_pos(ram)) if main else None)
         path["big"].append(bool(ram[RAM.PLAYER_SIZE] == 0) if main else None)
         if ram[RAM.FLOAT_STATE] == RAM.FLAGPOLE:
             path["flag_frame"] = cur["i"] - cur["t0"]
+        return started
 
     # A fresh emulator powered on (reset() without a state doesn't fully power-cycle).
     env = retro.make("SuperMarioBros-Nes-v0", state=retro.State.NONE,
                      use_restricted_actions=retro.Actions.ALL, render_mode=None)
     env.reset()
     names = env.unwrapped.buttons
-    for held in read_fm2(args.movie)[BOOT_OFFSET:]:
-        env.step(np.array([b in held for b in names], np.int8))
-        record(env.unwrapped.get_ram())
-    env.close()
-
     out = os.path.join("runs", args.run, "tas")
     os.makedirs(out, exist_ok=True)
+    for held in read_fm2(args.movie)[BOOT_OFFSET:]:
+        env.step(np.array([b in held for b in names], np.int8))
+        started = record(env.unwrapped.get_ram())
+        if started:
+            with gzip.open(os.path.join(out, f"{started}.state"), "wb") as fh:
+                fh.write(env.unwrapped.em.get_state())
+    env.close()
+
     for level in args.levels:
         if level not in paths:
             print(f"{level}: not in the movie")
@@ -92,7 +107,8 @@ def main():
         path = paths[level]
         json.dump({"level": level, "source": args.source, **path}, open(os.path.join(out, f"{level}.json"), "w"))
         flag = path["flag_frame"]
-        print(f"{level}: flag {'at %.2fs' % (flag / 60.0988) if flag is not None else 'not reached'}")
+        print(f"{level}: flag {'at %.2fs' % (flag / 60.0988) if flag is not None else 'not reached'}, "
+              f"next level at {path['next_start']}")
 
 
 if __name__ == "__main__":
