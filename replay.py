@@ -22,7 +22,7 @@ import numpy as np
 
 from ghosts import mario_sprite
 from smb.env import ACTIONS, SMBEnv
-from smb.human import HumanGhost, luigi
+from smb.race import TasGhost, tas_sprites
 from smb.obs import observe, screen_left
 from smb.viz import draw_pad, frame
 
@@ -76,7 +76,7 @@ def main():
         out = os.path.join("videos", "records", f"{runs[0]['level']}_{runs[0]['frames'] / NES_FPS:.2f}s.mp4")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     env = SMBEnv([runs[0]["level"]], frame_skip=runs[0]["frame_skip"], rank=97)
-    luigi_sprite, luigi_mask = luigi(*mario_sprite(env))
+    tas_look = tas_sprites(env, mario_sprite)
     # --best writes to a hidden temporary file first, so the folder never lacks a record.
     tmp = os.path.join(os.path.dirname(out), "." + os.path.basename(out)) if args.best else out
     writer = imageio.get_writer(tmp, fps=NES_FPS / env.frame_skip, macro_block_size=1, format="FFMPEG")
@@ -85,8 +85,8 @@ def main():
         start = run.get("start_state")
         env.reset(options={"level": run["level"], "state": base64.b64decode(start) if start else None})
         anomaly_steps = {s for s, _ in run.get("anomalies", [])}
-        # The human record races runs that start where it did, at the level start.
-        human = HumanGhost(run_dir, run["level"]) if not start else HumanGhost(run_dir, None)
+        # The TAS races runs that start where it did, at the level start.
+        tas = TasGhost(run_dir, run["level"]) if not start else TasGhost(run_dir, None)
         title = {
             "records": f"record #{i + 1}: {run['frames'] / NES_FPS:.2f}s",
             "evals": f"checkpoint {run['timesteps']:,} steps",
@@ -95,7 +95,7 @@ def main():
         for step, action in enumerate(run["actions"], 1):
             _, _, terminated, truncated, info = env.step(action)
             ram = env.emu.get_ram()
-            screen = human.overlay(env.screen, env.frames, screen_left(ram), luigi_sprite, luigi_mask)
+            screen = tas.overlay(env.screen, env.frames, screen_left(ram), tas_look)
             if args.plain:
                 img = cv2.cvtColor(np.ascontiguousarray(screen), cv2.COLOR_RGB2BGR)
                 draw_pad(img, 6, img.shape[0] - 46, ACTIONS[action], unit=0.55)
@@ -104,8 +104,8 @@ def main():
                 tiles, objs, _ = observe(ram)
                 lines = [f"level {run['level']}", title, f"at {run['timesteps']:,} steps",
                          f"time {env.frames / NES_FPS:6.2f}s"]
-                if human.ok:
-                    lines.append(human.label())
+                if tas.ok:
+                    lines.append(tas.label())
                 if step in anomaly_steps:
                     lines.append("!! position jump")
                 img = frame(screen, tiles, objs, lines, buttons=ACTIONS[action])[:, :, ::-1]

@@ -10,6 +10,7 @@ class RAM:
     Y_SCREEN = 0x00CE
     X_SPEED = 0x0057
     POWERUP = 0x0756       # 0 small, 1 big, 2 fire
+    PLAYER_SIZE = 0x0754   # 0 big, 1 small
     LIVES = 0x075A
     STAGE = 0x075C
     WORLD = 0x075F

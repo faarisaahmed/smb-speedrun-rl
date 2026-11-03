@@ -26,7 +26,7 @@ from stable_baselines3 import PPO
 
 from ghosts import mario_sprite
 from smb.env import ACTIONS, SMBEnv
-from smb.human import HumanGhost, luigi
+from smb.race import TasGhost, tas_sprites
 from smb.obs import observe, screen_left
 from smb.viz import frame
 
@@ -60,7 +60,7 @@ def main():
 
     run_dir = os.path.join("runs", args.run)
     env = SMBEnv(["1-1"], rank=98)
-    luigi_sprite, luigi_mask = luigi(*mario_sprite(env))
+    tas_look = tas_sprites(env, mario_sprite)
     writer = imageio.get_writer(args.video, fps=NES_FPS / env.frame_skip, macro_block_size=1) if args.video else None
     if not writer:
         cv2.namedWindow("smb-rl", cv2.WINDOW_AUTOSIZE)
@@ -88,7 +88,7 @@ def main():
         best = status.get("best_frames", {}).get(level)
 
         obs, _ = env.reset(options={"level": level})
-        human = HumanGhost(run_dir, level)
+        tas = TasGhost(run_dir, level)
         steps_label = os.path.basename(loaded).replace("step_", "").replace(".zip", "").lstrip("0") or "0"
         held_out = level in status.get("holdout", [])
         paused = False
@@ -104,9 +104,9 @@ def main():
                 f"time {env.frames / NES_FPS:6.2f}s",
                 f"best {best / NES_FPS:.2f}s" if best else "best  --",
             ]
-            if human.ok:
-                lines.append(human.label())
-            screen = human.overlay(env.screen, env.frames, screen_left(env.emu.get_ram()), luigi_sprite, luigi_mask)
+            if tas.ok:
+                lines.append(tas.label())
+            screen = tas.overlay(env.screen, env.frames, screen_left(env.emu.get_ram()), tas_look)
             img = frame(screen, tiles, objs, lines, buttons=ACTIONS[int(action)])
             if writer:
                 writer.append_data(img[:, :, ::-1])

@@ -25,7 +25,7 @@ import imageio
 import numpy as np
 
 from smb.env import ACTIONS, SMBEnv
-from smb.human import HumanGhost, luigi
+from smb.race import TAS_ALPHA, TasGhost, tas_sprites
 from smb.obs import screen_left
 from smb.ram import RAM, x_pos
 from smb.viz import draw_pad
@@ -78,13 +78,20 @@ def step_clock(run_dir):
     return lambda t: float(np.interp(t, times, steps))
 
 
-def mario_sprite(env):
-    """Small Mario cut out of the 1-1 start screen: (BGR pixels, mask)."""
+def mario_sprite(env, big=False):
+    """Mario cut out of the 1-1 start screen: (BGR pixels, mask), 16 or (big) 32 px tall."""
     env.reset(options={"level": "1-1"})
+    screen = env.screen
+    if big:
+        mem = env.env.unwrapped.data.memory
+        for _ in range(2):   # the game redraws him big on the second frame
+            mem.assign(RAM.PLAYER_SIZE, "|u1", 0)
+            mem.assign(RAM.POWERUP, "|u1", 1)
+            screen = env.env.step(np.zeros(len(env.env.unwrapped.buttons), np.int8))[0]
     ram = env.emu.get_ram()
     col = x_pos(ram) - screen_left(ram) - CROP
-    row = int(ram[RAM.Y_SCREEN]) + 16 - CROP
-    patch = env.screen[row:row + 16, col:col + 16]
+    row = int(ram[RAM.Y_SCREEN]) + (0 if big else 16) - CROP
+    patch = screen[row:row + (32 if big else 16), col:col + 16]
     mask = np.zeros(patch.shape[:2], bool)
     for color in MARIO_COLORS:   # Mario starts in front of the hill, so mask by his own palette
         mask |= np.all(patch == color, axis=2)
@@ -162,8 +169,8 @@ def main():
     furthest = max(episodes, key=lambda ep: ep[0]["max_x"])
     pano = build_panorama(env, args.level, furthest[1])
     sprite, mask = mario_sprite(env)
-    luigi_sprite, _ = luigi(sprite, mask)
-    human = HumanGhost(run_dir, args.level)
+    tas_look = tas_sprites(env, mario_sprite)
+    tas = TasGhost(run_dir, args.level)
     env.close()
     clock = step_clock(run_dir)
     for folder in ("other", "ghosts"):
@@ -212,9 +219,10 @@ def main():
         if alive:
             x, y, held = max(alive)
             draw_sprite(view, sprite, mask, x - c, y - 256 + 16 - TOP, 1.0)
-        pos = human.at(t * batch[0][0]["frame_skip"])
+        pos = tas.at(t * batch[0][0]["frame_skip"])
         if pos is not None:
-            draw_sprite(view, luigi_sprite, mask, pos[0] - c, pos[1] - 256 + 16 - TOP, 1.0)
+            ts, tm = tas_look[pos[2]]
+            draw_sprite(view, ts, tm, pos[0] - c, pos[1] - 256 + 32 - tm.shape[0] - TOP, TAS_ALPHA)
         view = view.astype(np.uint8)
         for x, y in deaths:
             sx, sy = x - c + 8, min(y - 256 + 24 - TOP, view.shape[0] - 6)
@@ -224,9 +232,9 @@ def main():
         text = f"{args.level}   ~{approx:,} training steps   {len(alive)} alive   {cleared}/{len(batch)} cleared"
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 5, cv2.LINE_AA)
         cv2.putText(big, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-        if human.ok:
-            cv2.putText(big, human.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 5, cv2.LINE_AA)
-            cv2.putText(big, human.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (60, 200, 60), 2, cv2.LINE_AA)
+        if tas.ok:
+            cv2.putText(big, tas.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 5, cv2.LINE_AA)
+            cv2.putText(big, tas.label(), (12, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
         if alive:   # the solid (leading) ghost's buttons
             draw_pad(big, 12, big.shape[0] - 106, ACTIONS[held], unit=1.3)
         writer.append_data(big[:, :, ::-1])
