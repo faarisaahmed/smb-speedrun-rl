@@ -46,10 +46,11 @@ def main():
     p.add_argument("--run", default="main")
     p.add_argument("--attempts", type=int, default=50)
     p.add_argument("--levels", nargs="*")
+    p.add_argument("--tas", default="tas", help="which tracked TAS to race (a folder from track_tas.py --tas)")
     args = p.parse_args()
     run_dir = os.path.join("runs", args.run)
-    tas_dir = os.path.join(run_dir, "tas")
-    out_dir = os.path.join(run_dir, "tas_race")
+    tas_dir = os.path.join(run_dir, args.tas)
+    out_dir = os.path.join(run_dir, f"{args.tas}_race")
     os.makedirs(out_dir, exist_ok=True)
     ckpt = sorted(glob.glob(os.path.join(run_dir, "checkpoints", "*.zip")))[-1]
     model = SILPPO.load(ckpt, device="cpu")

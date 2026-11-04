@@ -3,7 +3,7 @@
 
 class RAM:
     PLAYER_STATE = 0x000E  # 0x06 dead, 0x08 normal, 0x0B dying
-    FLOAT_STATE = 0x001D   # 0x03 = sliding down the flagpole
+    FLOAT_STATE = 0x001D   # 0x03 = climbing: the flagpole, or a vine
     X_PAGE = 0x006D
     X_SCREEN = 0x0086
     Y_PAGE = 0x00B5        # >1 means Mario fell below the screen
@@ -22,7 +22,8 @@ class RAM:
 
     DYING = 0x0B
     DEAD = 0x06
-    FLAGPOLE = 0x03
+    CLIMBING = 0x03
+    NORMAL = 0x08
 
 
 def x_pos(ram):
@@ -32,6 +33,11 @@ def x_pos(ram):
 def y_pos(ram):
     # Larger = higher on screen, measured from the bottom of the world.
     return int(ram[RAM.Y_PAGE]) * 256 + int(ram[RAM.Y_SCREEN])
+
+
+def on_flagpole(ram):
+    # Climbing a vine keeps the normal player state; the flagpole doesn't.
+    return ram[RAM.FLOAT_STATE] == RAM.CLIMBING and ram[RAM.PLAYER_STATE] != RAM.NORMAL
 
 
 def game_timer(ram):

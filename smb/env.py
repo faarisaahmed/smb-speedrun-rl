@@ -19,7 +19,7 @@ import numpy as np
 import stable_retro as retro
 
 from smb.obs import COLS, N_OBJ, N_SCALARS, ROWS, observe
-from smb.ram import RAM, x_pos, y_pos
+from smb.ram import RAM, on_flagpole, x_pos, y_pos
 
 STATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "states")
 
@@ -101,6 +101,9 @@ AREA_KEY = 1000
 # few inputs have to be right, and the failure weighting walks practice back
 # toward the take-off as those get learned (the "backward" algorithm).
 DEMO_DIR = "demo"
+# Restart points from a TAS where it takes a shortcut (frontier/<level>/hint/,
+# see make_hints.py), named and used like demo points.
+HINT_DIR = "hint"
 
 
 def area_id(ram):
@@ -218,12 +221,13 @@ class SMBEnv(gym.Env):
     def load_demo(self, level):
         """(Re)load demo restart points; explore.py adds them while training runs."""
         self.demo[level] = {}
-        d = os.path.join(self.frontier_dir or "", level, DEMO_DIR)
-        if self.frontier_dir and os.path.isdir(d):
-            for f in os.listdir(d):
-                if f.endswith(".state"):
-                    with gzip.open(os.path.join(d, f), "rb") as fh:
-                        self.demo[level][(DEMO_DIR, int(f.split(".")[0]))] = fh.read()
+        for sub in (DEMO_DIR, HINT_DIR):
+            d = os.path.join(self.frontier_dir or "", level, sub)
+            if self.frontier_dir and os.path.isdir(d):
+                for f in os.listdir(d):
+                    if f.endswith(".state"):
+                        with gzip.open(os.path.join(d, f), "rb") as fh:
+                            self.demo[level][(sub, int(f.split(".")[0]))] = fh.read()
 
     def pick_frontier(self, level):
         if level not in self.frontier:
@@ -296,7 +300,7 @@ class SMBEnv(gym.Env):
             # Stop early on the frame the outcome is decided, so recorded
             # frame counts are exact.
             if ram[RAM.PLAYER_STATE] in (RAM.DYING, RAM.DEAD) or ram[RAM.Y_PAGE] > 1 \
-                    or ram[RAM.FLOAT_STATE] == RAM.FLAGPOLE:
+                    or on_flagpole(ram):
                 break
         self.screen = obs
         self.steps += 1
@@ -343,7 +347,7 @@ class SMBEnv(gym.Env):
         self.prev_powerup = powerup
 
         died = ram[RAM.PLAYER_STATE] in (RAM.DYING, RAM.DEAD) or ram[RAM.Y_PAGE] > 1
-        flag = ram[RAM.FLOAT_STATE] == RAM.FLAGPOLE
+        flag = on_flagpole(ram)
         # Stalling ends the episode and costs as much as dying. As a bootstrapped
         # truncation it was nearly free, so the agent learned to wait out
         # piranha pipes forever (29% of 6-2 attempts) rather than risk them.

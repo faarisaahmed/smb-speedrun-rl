@@ -26,7 +26,7 @@ import stable_retro as retro
 
 from make_states import OUTDOOR_LEVELS
 from smb.env import area_id
-from smb.ram import RAM, x_pos, y_pos
+from smb.ram import RAM, on_flagpole, x_pos, y_pos
 
 # FCEUX's fm2 button columns, in order.
 FM2_BUTTONS = {"R": "RIGHT", "L": "LEFT", "D": "DOWN", "U": "UP", "T": "START", "S": "SELECT", "B": "B", "A": "A"}
@@ -52,6 +52,7 @@ def main():
     p.add_argument("--movie", required=True)
     p.add_argument("--source", default="TAS")
     p.add_argument("--run", default="main")
+    p.add_argument("--tas", default="tas", help="folder under the run to write to (one per movie)")
     p.add_argument("--levels", nargs="*", default=OUTDOOR_LEVELS)
     args = p.parse_args()
 
@@ -81,7 +82,7 @@ def main():
         path["x"].append(int(x_pos(ram)) if main else None)
         path["y"].append(int(y_pos(ram)) if main else None)
         path["big"].append(bool(ram[RAM.PLAYER_SIZE] == 0) if main else None)
-        if ram[RAM.FLOAT_STATE] == RAM.FLAGPOLE:
+        if on_flagpole(ram):
             path["flag_frame"] = cur["i"] - cur["t0"]
         return started
 
@@ -90,7 +91,7 @@ def main():
                      use_restricted_actions=retro.Actions.ALL, render_mode=None)
     env.reset()
     names = env.unwrapped.buttons
-    out = os.path.join("runs", args.run, "tas")
+    out = os.path.join("runs", args.run, args.tas)
     os.makedirs(out, exist_ok=True)
     for held in read_fm2(args.movie)[BOOT_OFFSET:]:
         env.step(np.array([b in held for b in names], np.int8))
