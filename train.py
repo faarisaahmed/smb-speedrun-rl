@@ -252,13 +252,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--name", default="main")
     p.add_argument("--envs", type=int, default=16)
-    p.add_argument("--steps", type=int, default=2_000_000_000)
+    p.add_argument("--steps", type=int, default=4_000_000_000)
     p.add_argument("--frame-skip", type=int, default=2)
     p.add_argument("--ckpt-every", type=int, default=500_000)
     p.add_argument("--device", default="auto")
     p.add_argument("--mid-start", type=float, default=0.5,
                    help="fraction of episodes started from a saved frontier snapshot")
     p.add_argument("--resume", action="store_true", help="continue from the latest checkpoint in the run")
+    p.add_argument("--lr", type=float, help="change the learning rate (default 2.5e-4, or the checkpoint's)")
     args = p.parse_args()
 
     run_dir = os.path.join("runs", args.name)
@@ -284,14 +285,16 @@ def main():
     if ckpts:
         latest = os.path.join(ckpt_dir, ckpts[-1])
         print("resuming from", latest)
-        model = SILPPO.load(latest, env=venv, device=device, tensorboard_log=os.path.join(run_dir, "tb"))
+        lr = {} if args.lr is None else {"learning_rate": args.lr, "lr_schedule": lambda _: args.lr}
+        model = SILPPO.load(latest, env=venv, device=device, tensorboard_log=os.path.join(run_dir, "tb"),
+                            custom_objects=lr)
     else:
         model = SILPPO(
             "MultiInputPolicy", venv, device=device,
             policy_kwargs=dict(features_extractor_class=GridExtractor,
                                net_arch=dict(pi=[256], vf=[256])),
             n_steps=512, batch_size=1024, n_epochs=4,
-            learning_rate=2.5e-4, gamma=0.99, gae_lambda=0.95,
+            learning_rate=args.lr or 2.5e-4, gamma=0.99, gae_lambda=0.95,
             clip_range=0.2, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
             tensorboard_log=os.path.join(run_dir, "tb"), verbose=0,
         )
