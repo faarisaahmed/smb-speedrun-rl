@@ -25,7 +25,7 @@ from smb.env import AREA_KEY, FRONTIER_BIN, HINT_DIR, area_id
 from smb.ram import RAM, x_pos
 from track_tas import BOOT_OFFSET, LOADING, NORMAL, read_fm2
 
-BEFORE = (150, 90, 45)   # frames before the TAS's last controllable moment in an area
+BEFORE = (150, 90, 45, 20, 10)   # frames before the TAS's last controllable moment in an area
 AFTER = (0, 60)     # frames after it's controllable in the next one
 SKIP_DX = 32        # px in one frame: a glitch (Mario runs at most ~3.5 px a frame)
 
