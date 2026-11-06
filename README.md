@@ -4,39 +4,37 @@ A PPO agent learning to speedrun the real NES **Super Mario Bros.**, running in 
 emulator: first 1-1, then 1-3, then every outdoor level, and eventually looking for
 speedrun tricks and glitches on its own.
 
+**[Watch it play: faarisaahmed.github.io/smb-speedrun-rl](https://faarisaahmed.github.io/smb-speedrun-rl/)**:
+highlights, every record, fair races against tool-assisted runs, and the story of what went wrong.
+
 This is the much better successor to
 [super-mario-bros-rl-model](https://github.com/faarisaahmed/super-mario-bros-rl-model).
 That project rebuilt the game from scratch in pygame and trained an agent on the
 remake. The agent got about 21% of the way through 1-1. This one plays the actual
-cartridge, clears 1-1 in **21.28 s**, cracked 1-3's tall-tree jumps, and is now
-learning all 17 outdoor training levels at once.
+cartridge and, after 2.38B steps, clears all 17 outdoor training levels as small Mario.
 
-## Progress
+## Results
 
-Best times so far (agent-measured: power-on of the level to touching the flagpole).
-Training is still running, so these keep dropping.
+Best times (power-on of the level to touching the flagpole, small Mario, every run
+playable on a real controller):
 
 | level | best | | level | best |
 |---|---|---|---|---|
-| 1-1 | 21.28 s | | 5-1 | 22.81 s |
-| 1-3 | 16.66 s | | 5-2 | 21.41 s |
-| 2-1 | 24.06 s | | 6-2 | 32.93 s |
-| 2-3 | 24.04 s | | 6-3 | 18.10 s |
-| 3-1 | 22.48 s | | 7-1 | 20.08 s |
-| 3-2 | 22.41 s | | 7-3 | 24.03 s |
-| 3-3 | 16.21 s | | 8-1 | 44.18 s |
-| 4-1 | 24.09 s | | 8-3 | 23.18 s |
-| 4-3 | 15.77 s | | | |
+| 1-1 | 20.00 s | | 5-1 | 21.76 s |
+| 1-3 | 16.26 s | | 5-2 | 21.36 s |
+| 2-1 | 23.43 s | | 6-2 | 26.66 s |
+| 2-3 | 24.01 s | | 6-3 | 18.00 s |
+| 3-1 | 21.46 s | | 7-1 | 19.35 s |
+| 3-2 | 22.30 s | | 7-3 | 24.01 s |
+| 3-3 | 16.14 s | | 8-1 | 40.93 s |
+| 4-1 | 24.01 s | | 8-3 | 22.85 s |
+| 4-3 | 15.71 s | | | |
 
-All 17 outdoor training levels have been cleared at least once (as of 180M steps).
+5-3, 6-1 and 8-2 are never trained on; they're held out to test levels it has never seen.
 
-Milestones:
-- **1-1:** first clear after 252k steps (33.8 s), 21.5 s by 12M.
-- **1-3:** stuck at the first tall tree for ~75M steps, then cleared at 97M.
-- **Every outdoor training level:** unlocked at 98M; all 17 cleared by 162M. 5-3, 6-1 and 8-2 are never
-  trained on; they're held out to test whether it can play levels it has never seen.
-
-Along the way it found the 1-1 bonus pipe on its own.
+`race_tas.py` races it fairly against a TAS: the agent plays from the TAS's own save
+state at each level's start, and both are timed to the next level's start. See the
+site for the results.
 
 ## How it works
 
@@ -112,6 +110,11 @@ pkill -f "python -W ignore train.py"                         # stop (saves a che
 .venv/bin/python -W ignore replay.py evals --level 1-1           # one run per checkpoint
 .venv/bin/python -W ignore replay.py anomalies                   # glitch candidates
 .venv/bin/python -W ignore ghosts.py --level 1-3 --at latest --count 300   # many attempts at once
+.venv/bin/python -W ignore race_tas.py --attempts 50                       # fair race against the TAS
+.venv/bin/python -W ignore replay.py race --level 1-1                      # ...and its video
+
+# the website (docs/, served by GitHub Pages)
+.venv/bin/python make_site.py
 
 # graphs
 .venv/bin/tensorboard --logdir runs/main/tb
@@ -125,6 +128,8 @@ Videos land in:
 | `videos/ghosts/` | hundreds of attempts overlaid on the level |
 | `videos/cool/` | secret pipes, glitch candidates, record progressions |
 | `videos/other/` | everything else |
+| `videos/races/` | fair races against a TAS (`replay.py race`) |
+| `videos/best/` | the best of all of the above, in one place |
 
 ## Run outputs (`runs/main/`)
 

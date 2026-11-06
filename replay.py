@@ -3,6 +3,9 @@
   python replay.py records   --level 1-1   # every new fastest time, in order
   python replay.py evals     --level 1-1   # the checkpoint-by-checkpoint progression
   python replay.py anomalies               # glitch candidates (big position jumps)
+  python replay.py race      --level 1-1   # the agent's fair race against the TAS
+      (race_tas.py: from the TAS's own state at the level start); --tas tas_small
+      races the power-up-less TAS
 
 Options: --run main, --out videos/x.mp4, --plain (game screen only, no
 side panel, for editing), --last N (only the N most recent).
@@ -13,6 +16,7 @@ side panel, for editing), --last N (only the N most recent).
 """
 import argparse
 import base64
+import gzip
 import json
 import os
 
@@ -38,6 +42,20 @@ def is_area_change(dx):
     return abs(dx) >= AREA_CHANGE_DX
 
 
+def load_race(run_dir, tas, level):
+    """race_tas.py's best run for the level, as a run replay can play."""
+    path = os.path.join(run_dir, f"{tas}_race", f"{level}.json")
+    if not os.path.exists(path):
+        return []
+    race = json.load(open(path))
+    with gzip.open(os.path.join(run_dir, tas, f"{level}.state"), "rb") as fh:
+        state = base64.b64encode(fh.read()).decode()
+    target = json.load(open(os.path.join(run_dir, tas, f"{level}.json")))
+    return [{**race, "start_state": state, "frames": race["flag_frame"], "frame_skip": 2,
+             "timesteps": int(race["checkpoint"].split("_")[1].split(".")[0]),
+             "outcome": "flag", "tas_next": target["next_start"]}]
+
+
 def load(run_dir, kind, level, include_pipes=False):
     path = os.path.join(run_dir, f"{kind}.jsonl")
     runs = [json.loads(l) for l in open(path)] if os.path.exists(path) else []
@@ -49,8 +67,9 @@ def load(run_dir, kind, level, include_pipes=False):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("kind", choices=["records", "evals", "anomalies"])
+    p.add_argument("kind", choices=["records", "evals", "anomalies", "race"])
     p.add_argument("--run", default="main")
+    p.add_argument("--tas", default="tas", help="race: which tracked TAS (a folder from track_tas.py --tas)")
     p.add_argument("--level")
     p.add_argument("--out")
     p.add_argument("--plain", action="store_true")
@@ -60,7 +79,10 @@ def main():
     args = p.parse_args()
 
     run_dir = os.path.join("runs", args.run)
-    runs = load(run_dir, args.kind, args.level, args.include_pipes)
+    if args.kind == "race":
+        runs = load_race(run_dir, args.tas, args.level)
+    else:
+        runs = load(run_dir, args.kind, args.level, args.include_pipes)
     if args.best:
         runs = [min(runs, key=lambda r: r["frames"])] if runs else []
     if args.last:
@@ -70,7 +92,7 @@ def main():
         return
 
     # Records go with the other record videos; glitch candidates with the cool finds.
-    folder = {"records": "records", "evals": "other", "anomalies": "cool"}[args.kind]
+    folder = {"records": "records", "evals": "other", "anomalies": "cool", "race": "races"}[args.kind]
     out = args.out or os.path.join("videos", folder, f"{args.level or 'all'}_{args.kind}.mp4")
     if args.best:
         out = os.path.join("videos", "records", f"{runs[0]['level']}_{runs[0]['frames'] / NES_FPS:.2f}s.mp4")
@@ -86,11 +108,15 @@ def main():
         env.reset(options={"level": run["level"], "state": base64.b64decode(start) if start else None})
         anomaly_steps = {s for s, _ in run.get("anomalies", [])}
         # The TAS races runs that start where it did, at the level start.
-        tas = TasGhost(run_dir, run["level"]) if not start else TasGhost(run_dir, None)
+        if args.kind == "race":
+            tas = TasGhost(run_dir, run["level"], args.tas)
+        else:
+            tas = TasGhost(run_dir, run["level"]) if not start else TasGhost(run_dir, None)
         title = {
             "records": f"record #{i + 1}: {run['frames'] / NES_FPS:.2f}s",
             "evals": f"checkpoint {run['timesteps']:,} steps",
             "anomalies": f"glitch candidate {i + 1}/{len(runs)}",
+            "race": "race vs the TAS, from its state",
         }[args.kind]
         for step, action in enumerate(run["actions"], 1):
             _, _, terminated, truncated, info = env.step(action)
@@ -114,7 +140,19 @@ def main():
                 break
         if env.frames != run["frames"]:
             print(f"warning: replay of run {i} diverged ({env.frames} vs {run['frames']} frames)")
-        for _ in range(20):
+        if args.kind == "race" and not args.plain:
+            # A full run is timed to the next level's start, not the flag.
+            tas_next = run["tas_next"]
+            if tas_next is None:   # the movie ends before the next level
+                verdict, tas_time = "TAS not timed", "--"
+            else:
+                d = run["next_start"] - tas_next
+                verdict = "tie" if d == 0 else (f"AGENT by {-d} frames" if d < 0 else f"TAS by {d} frames")
+                tas_time = f"{tas_next / NES_FPS:.2f}s"
+            lines = [f"level {run['level']}", "timed to the next level's start:",
+                     f"agent {run['next_start'] / NES_FPS:.2f}s", f"TAS   {tas_time}", verdict]
+            img = frame(screen, tiles, objs, lines, buttons=ACTIONS[action])[:, :, ::-1]
+        for _ in range(20 if args.kind != "race" else 90):
             writer.append_data(img)
         print(f"{title} ({run['outcome']})", flush=True)
 

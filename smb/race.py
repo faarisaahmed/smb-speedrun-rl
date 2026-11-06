@@ -28,8 +28,8 @@ def tas_sprites(env, mario_sprite):
 
 
 class TasGhost:
-    def __init__(self, run_dir, level):
-        path = os.path.join(run_dir, "tas", f"{level}.json")
+    def __init__(self, run_dir, level, tas="tas"):
+        path = os.path.join(run_dir, tas, f"{level}.json")
         data = json.load(open(path)) if os.path.exists(path) else None
         self.ok = data is not None
         if not self.ok:

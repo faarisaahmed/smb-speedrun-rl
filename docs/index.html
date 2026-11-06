@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mario Speedrun AI</title>
+<meta name="description" content="A reinforcement-learning agent that taught itself to speedrun the real NES Super Mario Bros., small Mario only, raced against the world's best tool-assisted runs.">
+<meta property="og:title" content="Mario Speedrun AI">
+<meta property="og:description" content="A PPO agent that taught itself to speedrun every outdoor level of the real NES Super Mario Bros.">
+<meta property="og:image" content="media/ghost_7-1.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23f2b33d'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%23c8761c'/%3E%3Crect x='6' y='4' width='4' height='2' fill='%23f2b33d'/%3E%3Crect x='9' y='6' width='2' height='3' fill='%23f2b33d'/%3E%3Crect x='7' y='9' width='2' height='1' fill='%23f2b33d'/%3E%3Crect x='7' y='11' width='2' height='1' fill='%23f2b33d'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top"><span class="brand-block" aria-hidden="true"></span>Mario Speedrun AI</a>
+    <nav class="nav-links">
+      <a href="#highlights">Highlights</a>
+      <a href="#results">Results</a>
+      <a href="#tas">vs the TAS</a>
+      <a href="#learning">Learning</a>
+      <a href="#story">Story</a>
+      <a href="#method">Method</a>
+      <a class="nav-code" href="https://github.com/faarisaahmed/smb-speedrun-rl">Code</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="hero-video" aria-hidden="true">
+    <video id="hero-video" muted loop playsinline preload="metadata" poster="media/ghost_7-1.jpg"></video>
+  </div>
+  <div class="wrap hero-inner">
+    <p class="eyebrow">Reinforcement learning · NES Super Mario Bros. (1985)</p>
+    <h1>An AI that taught itself to speedrun Super&nbsp;Mario&nbsp;Bros.</h1>
+    <p class="lede">A neural network playing the real cartridge in an emulator, starting from
+      random button presses. No human demonstrations, no scripted tricks, small Mario only.
+      After <span data-stat="steps">2.4 billion</span> steps of practice it clears every outdoor
+      level, finds the speedrunners' shortcuts, and races the world's best tool-assisted runs.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#highlights">Watch the highlights</a>
+      <a class="btn" href="https://github.com/faarisaahmed/smb-speedrun-rl">Read the code</a>
+    </div>
+    <dl class="stats" id="hero-stats"></dl>
+  </div>
+  <p class="wrap hero-caption">Background: 300 of the agent's attempts at 7-1 overlaid at once, Hammer Bros and all.</p>
+</section>
+
+<section id="highlights" class="section">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="kicker">01 · Highlights</p>
+      <h2>The best of it, in a few minutes</h2>
+      <p class="section-lede">Every clip is the agent's own play, replayed frame for frame from its recorded
+        inputs. The white silhouette is the world's best warpless tool-assisted run (HappyLee &amp; Mars608), racing alongside.
+        The panel on the right is what the agent actually sees: the screen as a grid of tiles and objects read from memory, plus the buttons it's holding.</p>
+    </header>
+    <div class="grid cards" id="highlight-cards"></div>
+  </div>
+</section>
+
+<section id="results" class="section">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="kicker">02 · Results</p>
+      <h2>Every outdoor level, cleared</h2>
+      <p class="section-lede">The agent's fastest run on each of the 17 outdoor levels it trains on, from the level's
+        start to touching the flagpole, as small Mario. Underground, underwater and castle levels are out of scope; 5-3, 6-1 and
+        8-2 are held out to test how it plays levels it has never seen.</p>
+    </header>
+    <div class="table-wrap">
+      <table class="results" id="results-table">
+        <thead><tr>
+          <th scope="col">Level</th>
+          <th scope="col" class="num">Agent record</th>
+          <th scope="col" class="num">TAS flag time</th>
+          <th scope="col" class="num">Difference</th>
+          <th scope="col" class="rate-col">Clears from the start</th>
+          <th scope="col"><span class="sr">Video</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="note"><strong>Read the flag-time column with care.</strong> From 1-3 on, the TAS plays as big or fire Mario, and it is
+      built to hit the game's 21-frame "frame rules" for the next level, not to touch the flag soonest, so beating its flag time
+      isn't beating the TAS. The fair head-to-head is the next section.</p>
+  </div>
+</section>
+
+<section id="tas" class="section">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="kicker">03 · Head to head</p>
+      <h2>Racing the tool-assisted runs, fairly</h2>
+      <p class="section-lede">For a fair race the agent loads the TAS's own saved game at each level's start (the same power-up,
+        the same enemies, the same frame-rule timing) and both are clocked to the moment the next level becomes playable,
+        fireworks and castle walk included. Its fastest of 50 attempts counts.</p>
+    </header>
+    <div class="tabs" role="tablist" id="race-tabs">
+      <button role="tab" aria-selected="true" data-race="race_small">vs power-up-less TAS</button>
+      <button role="tab" aria-selected="false" data-race="race">vs warpless world-record TAS</button>
+    </div>
+    <p class="race-blurb" id="race-blurb"></p>
+    <div class="table-wrap">
+      <table class="results race" id="race-table">
+        <thead><tr>
+          <th scope="col">Level</th>
+          <th scope="col" class="num">TAS</th>
+          <th scope="col" class="num">Agent</th>
+          <th scope="col" class="verdict-col">Result</th>
+          <th scope="col"><span class="sr">Video</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="learning" class="section">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="kicker">04 · Learning</p>
+      <h2>From mashing buttons to clean runs</h2>
+      <p class="section-lede">It starts knowing nothing: not that right is forward, not what a Goomba is. Everything it does
+        well, it found by trial and error.</p>
+    </header>
+
+    <figure class="chart-card">
+      <figcaption>
+        <h3>Share of attempts that reach the flag</h3>
+        <p>Average over the levels in training at the time, from each level's start. At about 98M steps it graduates from
+          1-1 and 1-3 to all 17 outdoor levels at once, and the average drops before it climbs.</p>
+      </figcaption>
+      <div class="chart" id="curve-chart"></div>
+    </figure>
+
+    <figure class="chart-card">
+      <figcaption>
+        <h3>Record time over training</h3>
+        <p>Each step down is a new record. Training steps on a log scale: the first seconds come off in minutes, the last
+          tenths take a billion steps.</p>
+      </figcaption>
+      <div class="chip-row" id="record-levels" role="tablist" aria-label="Level"></div>
+      <div class="chart" id="record-chart"></div>
+    </figure>
+
+    <h3 class="sub">Ghosts: hundreds of attempts at once</h3>
+    <p class="sub-lede">Each translucent Mario is one attempt; a red × marks where one died. Watch the pack move further
+      with practice.</p>
+    <div class="grid cards" id="ghost-cards"></div>
+  </div>
+</section>
+
+<section id="story" class="section">
+  <div class="wrap narrow">
+    <header class="section-head">
+      <p class="kicker">05 · The story</p>
+      <h2>What went wrong, and what fixed it</h2>
+      <p class="section-lede">Most of the work was finding out why the agent was stuck. A rule held throughout: never script
+        the answer. Each fix changes what the agent can see, how it's rewarded or where it practices, then lets it find the move itself.</p>
+    </header>
+    <ol class="timeline" id="timeline"></ol>
+  </div>
+</section>
+
+<section id="method" class="section">
+  <div class="wrap">
+    <header class="section-head">
+      <p class="kicker">06 · Method</p>
+      <h2>How it works</h2>
+    </header>
+    <div class="grid method">
+      <article>
+        <h3>Sees memory, not pixels</h3>
+        <p>Each step, the visible screen is read from the console's RAM as a 13×17 grid of terrain tiles, enemies, platforms
+          and items, plus Mario's exact position, speed and state, for this step and the last. A small dense network learns
+          from that quickly on a CPU.</p>
+      </article>
+      <article>
+        <h3>Presses real buttons</h3>
+        <p>Twelve button combinations, chosen every 2 frames. Running is never forced and no technique is built in: it
+          learned to hold B, time jumps, and stomp or dodge enemies on its own. It's told which buttons it's still holding,
+          because a held A can't jump again.</p>
+      </article>
+      <article>
+        <h3>Rewarded for speed</h3>
+        <p>Pixels of progress (on the furthest point reached, so pipe shortcuts aren't punished), a small cost for every frame,
+          a penalty for dying or stalling, and a bonus at the flagpole. That's all it's told.</p>
+      </article>
+      <article>
+        <h3>PPO with self-imitation</h3>
+        <p>Proximal Policy Optimization over 16 emulators at once. After each update, a few extra gradient steps make it more
+          likely to repeat its own best runs and the explorer's discoveries.</p>
+      </article>
+      <article>
+        <h3>Go-Explore restarts</h3>
+        <p>Save states every 64 pixels it reaches. Half of all attempts restart from one, weighted toward spots where it keeps
+          failing, so hard sections get practiced instead of replayed from the start. A curiosity bonus pays for entering a
+          new area, fading with visits.</p>
+      </article>
+      <article>
+        <h3>Shown where, never how</h3>
+        <p>Late in training it got a few hints: practice starts placed just before the shortcuts the tool-assisted run takes,
+          as small Mario, but none of the TAS's inputs. Finding the actual move is still up to it.</p>
+      </article>
+    </div>
+    <div class="stack">
+      <span>stable-retro (NES emulation)</span><span>Stable-Baselines3 PPO</span><span>PyTorch</span><span>OpenCV / FFmpeg video</span><span>Trained on a Mac mini</span>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <p><a href="https://github.com/faarisaahmed/smb-speedrun-rl">github.com/faarisaahmed/smb-speedrun-rl</a></p>
+    <p class="fine">An unofficial fan research project, not affiliated with or endorsed by Nintendo. Super Mario Bros. is
+      a trademark of Nintendo. No game files are included; bring your own cartridge dump. The TAS ghost and the fair race use
+      HappyLee &amp; Mars608's warpless TAS and SysDataSoft's power-up-less TAS from TASVideos.</p>
+  </div>
+</footer>
+
+<dialog class="player" id="player">
+  <div class="player-inner">
+    <div class="player-bar">
+      <p class="player-title" id="player-title"></p>
+      <button class="player-close" id="player-close" aria-label="Close">×</button>
+    </div>
+    <video id="player-video" controls playsinline></video>
+    <p class="player-desc" id="player-desc"></p>
+  </div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
